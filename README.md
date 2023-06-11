@@ -4,7 +4,7 @@ This tutorial walks you through setting up Kubernetes the hard way. This guide i
 
 Kubernetes The Hard Way is optimized for learning, which means taking the long route to ensure you understand each task required to bootstrap a Kubernetes cluster.
 
-** NOTE: We will be using Terraform for building the infrastructure instead of google cloud command line tools and Ansible along the way to automate the installation the necessary softwares in the machines. We will also try to be a little bit cheaper.**
+**NOTE: We will be using Terraform for building the infrastructure instead of google cloud command line tools and Ansible along the way to automate the installation the necessary softwares in the machines. We will also try to be a little bit cheaper.**
 
 > The results of this tutorial should not be viewed as production ready, and may receive limited support from the community, but don't let that stop you from learning!
 
