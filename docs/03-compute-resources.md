@@ -30,33 +30,48 @@ resource "google_project_service" "cloud_resource_manager_api" {
 > file: modules/config/variables.tf
 ```hcl
 variable "project_id" {
-	type = string
-	default = "kubernetes-the-hard-way-389513"
+  type    = string
+  default = "kubernetes-the-hard-way-389513"
 }
 
 variable "default_region" {
-	type = string
-	default = "us-central1"
+  type    = string
+  default = "us-central1"
 }
 
 variable "default_zone" {
-	type = string
-	default = "us-central1-a"
+  type    = string
+  default = "us-central1-a"
+}
+
+variable "subnet_ip_cidr_range" {
+  default = {
+    node       = "10.240.0.0/24",
+		# we are dividing the node subnet into two parts
+		# one for controller and one for worker
+    controller = "10.240.0.0/25",
+    worker     = "10.240.0.128/25",
+    pod        = "10.200.0.0/16"
+  }
 }
 ```
 
 > file: modules/config/outputs.tf
 ```hcl
 output "project_id" {
-	value = var.project_id
+  value = var.project_id
 }
 
 output "default_region" {
-	value = var.default_region
+  value = var.default_region
 }
 
 output "default_zone" {
-	value = var.default_zone
+  value = var.default_zone
+}
+
+output "subnet_ip_cidr_range" {
+  value = var.subnet_ip_cidr_range
 }
 ```
 
@@ -151,25 +166,24 @@ Create a firewall rule that allows internal communication across all protocols:
 
 ```hcl
 resource "google_compute_firewall" "kubernetes-allow-internal" {
-	name = "kubernetes-allow-internal"
-	network = google_compute_network.kubernetes-the-hard-way.name
-	allow {
-		protocol = "icmp"
-	}
-	allow {
-		protocol = "tcp"
-		ports = ["0-65535"]
-	}
-	allow {
-		protocol = "udp"
-		ports = ["0-65535"]
-	}
-	source_ranges = [
-		# control plane
-		"10.240.0.0/24",
-		# worker nodes
-		"10.200.0.0/16"
-	]
+  name    = "kubernetes-allow-internal"
+  project = module.config.project_id
+  network = google_compute_network.kubernetes-the-hard-way.name
+  allow {
+    protocol = "icmp"
+  }
+  allow {
+    protocol = "tcp"
+    ports    = ["0-65535"]
+  }
+  allow {
+    protocol = "udp"
+    ports    = ["0-65535"]
+  }
+  source_ranges = [
+    module.config.subnet_ip_cidr_range.node,
+    module.config.subnet_ip_cidr_range.pod
+  ]
 }
 ```
 
@@ -210,8 +224,12 @@ Verify the `kubernetes-the-hard-way` static IP address was created in your defau
 
 > file: modules/network/outputs.tf
 ```hcl
-output "kubernetes_load_balancer_ip_address" {
-	value = google_compute_address.kubernetes-the-hard-way.address
+output "network" {
+	value = google_compute_network.kubernetes-the-hard-way
+}
+
+output "subnet" {
+	value = google_compute_subnetwork.kubernetes
 }
 ```
 
@@ -429,156 +447,411 @@ Verify all resources were created:
 
 ```bash
 $ terraform show
-
-# module.network.google_compute_address.kubernetes-the-hard-way:
-resource "google_compute_address" "kubernetes-the-hard-way" {
-    address            = "35.188.33.220"
-    address_type       = "EXTERNAL"
-    creation_timestamp = "2023-06-12T05:08:54.585-07:00"
-    id                 = "projects/kubernetes-the-hard-way-389513/regions/us-central1/addresses/kubernetes-the-hard-way"
-    name               = "kubernetes-the-hard-way"
-    network_tier       = "PREMIUM"
-    prefix_length      = 0
-    project            = "kubernetes-the-hard-way-389513"
-    region             = "us-central1"
-    self_link          = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/regions/us-central1/addresses/kubernetes-the-hard-way"
-    users              = []
-}
-
-# module.network.google_compute_firewall.kubernetes-allow-external:
-resource "google_compute_firewall" "kubernetes-allow-external" {
-    creation_timestamp = "2023-06-12T05:09:07.938-07:00"
-    destination_ranges = []
-    direction          = "INGRESS"
-    disabled           = false
-    id                 = "projects/kubernetes-the-hard-way-389513/global/firewalls/kubernetes-allow-external"
-    name               = "kubernetes-allow-external"
-    network            = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/global/networks/kubernetes-the-hard-way"
-    priority           = 1000
-    project            = "kubernetes-the-hard-way-389513"
-    self_link          = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/global/firewalls/kubernetes-allow-external"
-    source_ranges      = [
-        "0.0.0.0/0",
-    ]
-
-    allow {
-        ports    = [
-            "22",
-            "6443",
-        ]
-        protocol = "tcp"
-    }
-    allow {
-        ports    = []
-        protocol = "icmp"
-    }
-}
-
-# module.network.google_compute_firewall.kubernetes-allow-internal:
-resource "google_compute_firewall" "kubernetes-allow-internal" {
-    creation_timestamp = "2023-06-12T05:09:06.839-07:00"
-    destination_ranges = []
-    direction          = "INGRESS"
-    disabled           = false
-    id                 = "projects/kubernetes-the-hard-way-389513/global/firewalls/kubernetes-allow-internal"
-    name               = "kubernetes-allow-internal"
-    network            = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/global/networks/kubernetes-the-hard-way"
-    priority           = 1000
-    project            = "kubernetes-the-hard-way-389513"
-    self_link          = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/global/firewalls/kubernetes-allow-internal"
-    source_ranges      = [
-        "10.200.0.0/16",
-        "10.240.0.0/24",
-    ]
-
-    allow {
-        ports    = [
-            "0-65535",
-        ]
-        protocol = "tcp"
-    }
-    allow {
-        ports    = [
-            "0-65535",
-        ]
-        protocol = "udp"
-    }
-    allow {
-        ports    = []
-        protocol = "icmp"
-    }
-}
-
-# module.network.google_compute_network.kubernetes-the-hard-way:
-resource "google_compute_network" "kubernetes-the-hard-way" {
-    auto_create_subnetworks                   = false
-    delete_default_routes_on_create           = false
-    enable_ula_internal_ipv6                  = false
-    id                                        = "projects/kubernetes-the-hard-way-389513/global/networks/kubernetes-the-hard-way"
-    mtu                                       = 0
-    name                                      = "kubernetes-the-hard-way"
-    network_firewall_policy_enforcement_order = "AFTER_CLASSIC_FIREWALL"
-    project                                   = "kubernetes-the-hard-way-389513"
-    routing_mode                              = "REGIONAL"
-    self_link                                 = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/global/networks/kubernetes-the-hard-way"
-}
-
-# module.network.google_compute_subnetwork.kubernetes:
-resource "google_compute_subnetwork" "kubernetes" {
-    creation_timestamp         = "2023-06-12T05:09:07.886-07:00"
-    gateway_address            = "10.240.0.1"
-    id                         = "projects/kubernetes-the-hard-way-389513/regions/us-central1/subnetworks/kubernetes"
-    ip_cidr_range              = "10.240.0.0/24"
-    name                       = "kubernetes"
-    network                    = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/global/networks/kubernetes-the-hard-way"
-    private_ip_google_access   = false
-    private_ipv6_google_access = "DISABLE_GOOGLE_ACCESS"
-    project                    = "kubernetes-the-hard-way-389513"
-    purpose                    = "PRIVATE"
-    region                     = "us-central1"
-    secondary_ip_range         = []
-    self_link                  = "https://www.googleapis.com/compute/v1/projects/kubernetes-the-hard-way-389513/regions/us-central1/subnetworks/kubernetes"
-    stack_type                 = "IPV4_ONLY"
-}
-# module.resource.google_project_service.cloud_resource_manager_api:
-resource "google_project_service" "cloud_resource_manager_api" {
-    disable_on_destroy = true
-    id                 = "kubernetes-the-hard-way-389513/cloudresourcemanager.googleapis.com"
-    project            = "kubernetes-the-hard-way-389513"
-    service            = "cloudresourcemanager.googleapis.com"
-}
-
-# module.resource.google_project_service.compute_engine_api:
-resource "google_project_service" "compute_engine_api" {
-    disable_on_destroy = true
-    id                 = "kubernetes-the-hard-way-389513/compute.googleapis.com"
-    project            = "kubernetes-the-hard-way-389513"
-    service            = "compute.googleapis.com"
-}
+NOTE: Output not included for security reasons.
 ```
 
 ## Compute Instances
 
 The compute instances in this lab will be provisioned using [Ubuntu Server](https://www.ubuntu.com/server) 20.04, which has good support for the [containerd container runtime](https://github.com/containerd/containerd). Each compute instance will be provisioned with a fixed private IP address to simplify the Kubernetes bootstrapping process.
 
-### Kubernetes Controllers
 
-Create three compute instances which will host the Kubernetes control plane:
+Compute Instance Configurations
+> file: modules/compute/variables.tf
+```hcl
+variable "instance" {
+  type = object({
+    count        = optional(number, 3)
+    name_prefix  = optional(string)
+    machine_type = optional(string, "e2-standard-2")
+    boot_disk = optional(object({
+      auto_delete = optional(bool, true)
+      size        = optional(number, 10)
+      type        = optional(string, "pd-balanced")
+      image       = optional(string, "projects/debian-cloud/global/images/debian-11-bullseye-v20230509")
+      }), {
+      auto_delete = true
+      size        = 10
+      type        = "pd-balanced"
+      image       = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+    })
+    scopes = optional(list(string), [
+      "compute-rw",
+      "storage-ro",
+      "service-management",
+      "service-control",
+      "logging-write",
+      "monitoring"
+    ])
+    tags     = optional(list(string), ["kubernetes-the-hard-way"])
+    metadata = optional(map(string), {})
+  })
 
+  default = {}
+}
+
+variable "network" {
+  default = {
+    name              = null
+    subnet_name       = null
+    subnet_cidr_range = null
+  }
+}
+
+variable "is_worker" {
+	default = false
+}
 ```
-for i in 0 1 2; do
-  gcloud compute instances create controller-${i} \
-    --async \
-    --boot-disk-size 200GB \
-    --can-ip-forward \
-    --image-family ubuntu-2004-lts \
-    --image-project ubuntu-os-cloud \
-    --machine-type e2-standard-2 \
-    --private-network-ip 10.240.0.1${i} \
-    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
-    --subnet kubernetes \
-    --tags kubernetes-the-hard-way,controller
-done
+Template for creating compute instances, worker nodes and control plane nodes
+
+> file: modules/compute/main.tf
+```hcl
+# import modules
+
+module "config" {
+  source = "../config"
+}
+
+# create three compute instances for hosting the kubernetes control plane
+resource "google_compute_instance" "instance" {
+  count        = var.instance.count
+  name         = "${var.instance.name_prefix}-${count.index}"
+  machine_type = var.instance.machine_type
+  zone         = module.config.default_zone
+  tags         = var.instance.tags
+
+  boot_disk {
+    auto_delete = true
+    device_name = "${var.instance.name_prefix}-device-${count.index}"
+    initialize_params {
+      image = var.instance.boot_disk.image
+      size  = var.instance.boot_disk.size
+      type  = var.instance.boot_disk.type
+    }
+  }
+
+  network_interface {
+    subnetwork = var.network.subnet_name
+    # we are reserving the first 10 IP addresses for unknown special purposes 
+    network_ip = cidrhost(var.network.subnet_cidr_range, count.index + 10)
+      access_config {
+      network_tier = "STANDARD"
+    }
+  }
+  can_ip_forward = true
+
+  scheduling {
+    on_host_maintenance = "MIGRATE"
+    provisioning_model  = "STANDARD"
+  }
+
+  service_account {
+    scopes = var.instance.scopes
+  }
+
+  // if is_worker is true, then add pod_cidr metadata
+	// although its not a perfect solution, but it works for now
+	// TODO: modularize the metadata
+  metadata = var.is_worker ? {
+    "pod-cidr" = cidrsubnet(module.config.subnet_ip_cidr_range.pod, 8, count.index)
+  } : {}
+
+  enable_display = false
+}
+```
+
+### Kubernetes Controllers
+> file: main.tf
+
+```hcl
+module "controller" {
+  source = "./modules/compute"
+  instance = {
+    count       = 3
+    name_prefix = "controller"
+    tags        = ["kubernetes-the-hard-way", "controller"]
+  }
+  network = {
+    name              = module.network.network.name
+    subnet_name       = module.network.subnet.name
+    subnet_cidr_range = module.config.subnet_ip_cidr_range.controller
+  }
+}
+```
+
+- Executing terraform apply will provision the three compute instances:
+
+```bash
+$ terraform apply -target=module.controller
+module.network.google_compute_network.kubernetes-the-hard-way: Refreshing state... [id=projects/kubernetes-the-hard-way-389513/global/networks/kubernetes-the-hard-way]
+module.network.google_compute_subnetwork.kubernetes: Refreshing state... [id=projects/kubernetes-the-hard-way-389513/regions/us-central1/subnetworks/kubernetes]
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # module.controller.google_compute_instance.instance[0] will be created
+  + resource "google_compute_instance" "instance" {
+      + can_ip_forward       = true
+      + cpu_platform         = (known after apply)
+      + current_status       = (known after apply)
+      + deletion_protection  = false
+      + enable_display       = false
+      + guest_accelerator    = (known after apply)
+      + id                   = (known after apply)
+      + instance_id          = (known after apply)
+      + label_fingerprint    = (known after apply)
+      + machine_type         = "e2-standard-2"
+      + metadata_fingerprint = (known after apply)
+      + min_cpu_platform     = (known after apply)
+      + name                 = "controller-0"
+      + project              = (known after apply)
+      + self_link            = (known after apply)
+      + tags                 = [
+          + "controller",
+          + "kubernetes-the-hard-way",
+        ]
+      + tags_fingerprint     = (known after apply)
+      + zone                 = "us-central1-a"
+
+      + boot_disk {
+          + auto_delete                = true
+          + device_name                = "controller-device-0"
+          + disk_encryption_key_sha256 = (known after apply)
+          + kms_key_self_link          = (known after apply)
+          + mode                       = "READ_WRITE"
+          + source                     = (known after apply)
+
+          + initialize_params {
+              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + labels = (known after apply)
+              + size   = 10
+              + type   = "pd-balanced"
+            }
+        }
+
+      + network_interface {
+          + ipv6_access_type   = (known after apply)
+          + name               = (known after apply)
+          + network            = (known after apply)
+          + network_ip         = "10.240.0.10"
+          + stack_type         = (known after apply)
+          + subnetwork         = "kubernetes"
+          + subnetwork_project = (known after apply)
+
+          + access_config {
+              + nat_ip       = (known after apply)
+              + network_tier = "STANDARD"
+            }
+        }
+
+      + scheduling {
+          + automatic_restart   = true
+          + on_host_maintenance = "MIGRATE"
+          + preemptible         = false
+          + provisioning_model  = "STANDARD"
+        }
+
+      + service_account {
+          + email  = (known after apply)
+          + scopes = [
+              + "https://www.googleapis.com/auth/compute",
+              + "https://www.googleapis.com/auth/devstorage.read_only",
+              + "https://www.googleapis.com/auth/logging.write",
+              + "https://www.googleapis.com/auth/monitoring",
+              + "https://www.googleapis.com/auth/service.management.readonly",
+              + "https://www.googleapis.com/auth/servicecontrol",
+            ]
+        }
+    }
+
+  # module.controller.google_compute_instance.instance[1] will be created
+  + resource "google_compute_instance" "instance" {
+      + can_ip_forward       = true
+      + cpu_platform         = (known after apply)
+      + current_status       = (known after apply)
+      + deletion_protection  = false
+      + enable_display       = false
+      + guest_accelerator    = (known after apply)
+      + id                   = (known after apply)
+      + instance_id          = (known after apply)
+      + label_fingerprint    = (known after apply)
+      + machine_type         = "e2-standard-2"
+      + metadata_fingerprint = (known after apply)
+      + min_cpu_platform     = (known after apply)
+      + name                 = "controller-1"
+      + project              = (known after apply)
+      + self_link            = (known after apply)
+      + tags                 = [
+          + "controller",
+          + "kubernetes-the-hard-way",
+        ]
+      + tags_fingerprint     = (known after apply)
+      + zone                 = "us-central1-a"
+
+      + boot_disk {
+          + auto_delete                = true
+          + device_name                = "controller-device-1"
+          + disk_encryption_key_sha256 = (known after apply)
+          + kms_key_self_link          = (known after apply)
+          + mode                       = "READ_WRITE"
+          + source                     = (known after apply)
+
+          + initialize_params {
+              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + labels = (known after apply)
+              + size   = 10
+              + type   = "pd-balanced"
+            }
+        }
+
+      + network_interface {
+          + ipv6_access_type   = (known after apply)
+          + name               = (known after apply)
+          + network            = (known after apply)
+          + network_ip         = "10.240.0.11"
+          + stack_type         = (known after apply)
+          + subnetwork         = "kubernetes"
+          + subnetwork_project = (known after apply)
+
+          + access_config {
+              + nat_ip       = (known after apply)
+              + network_tier = "STANDARD"
+            }
+        }
+
+      + scheduling {
+          + automatic_restart   = true
+          + on_host_maintenance = "MIGRATE"
+          + preemptible         = false
+          + provisioning_model  = "STANDARD"
+        }
+
+      + service_account {
+          + email  = (known after apply)
+          + scopes = [
+              + "https://www.googleapis.com/auth/compute",
+              + "https://www.googleapis.com/auth/devstorage.read_only",
+              + "https://www.googleapis.com/auth/logging.write",
+              + "https://www.googleapis.com/auth/monitoring",
+              + "https://www.googleapis.com/auth/service.management.readonly",
+              + "https://www.googleapis.com/auth/servicecontrol",
+            ]
+        }
+    }
+
+  # module.controller.google_compute_instance.instance[2] will be created
+  + resource "google_compute_instance" "instance" {
+      + can_ip_forward       = true
+      + cpu_platform         = (known after apply)
+      + current_status       = (known after apply)
+      + deletion_protection  = false
+      + enable_display       = false
+      + guest_accelerator    = (known after apply)
+      + id                   = (known after apply)
+      + instance_id          = (known after apply)
+      + label_fingerprint    = (known after apply)
+      + machine_type         = "e2-standard-2"
+      + metadata_fingerprint = (known after apply)
+      + min_cpu_platform     = (known after apply)
+      + name                 = "controller-2"
+      + project              = (known after apply)
+      + self_link            = (known after apply)
+      + tags                 = [
+          + "controller",
+          + "kubernetes-the-hard-way",
+        ]
+      + tags_fingerprint     = (known after apply)
+      + zone                 = "us-central1-a"
+
+      + boot_disk {
+          + auto_delete                = true
+          + device_name                = "controller-device-2"
+          + disk_encryption_key_sha256 = (known after apply)
+          + kms_key_self_link          = (known after apply)
+          + mode                       = "READ_WRITE"
+          + source                     = (known after apply)
+
+          + initialize_params {
+              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + labels = (known after apply)
+              + size   = 10
+              + type   = "pd-balanced"
+            }
+        }
+
+      + network_interface {
+          + ipv6_access_type   = (known after apply)
+          + name               = (known after apply)
+          + network            = (known after apply)
+          + network_ip         = "10.240.0.12"
+          + stack_type         = (known after apply)
+          + subnetwork         = "kubernetes"
+          + subnetwork_project = (known after apply)
+
+          + access_config {
+              + nat_ip       = (known after apply)
+              + network_tier = "STANDARD"
+            }
+        }
+
+      + scheduling {
+          + automatic_restart   = true
+          + on_host_maintenance = "MIGRATE"
+          + preemptible         = false
+          + provisioning_model  = "STANDARD"
+        }
+
+      + service_account {
+          + email  = (known after apply)
+          + scopes = [
+              + "https://www.googleapis.com/auth/compute",
+              + "https://www.googleapis.com/auth/devstorage.read_only",
+              + "https://www.googleapis.com/auth/logging.write",
+              + "https://www.googleapis.com/auth/monitoring",
+              + "https://www.googleapis.com/auth/service.management.readonly",
+              + "https://www.googleapis.com/auth/servicecontrol",
+            ]
+        }
+    }
+
+Plan: 3 to add, 0 to change, 0 to destroy.
+╷
+│ Warning: Resource targeting is in effect
+│ 
+│ You are creating a plan with the -target option, which means that the result of this plan may not represent all of the changes requested by the current configuration.
+│ 
+│ The -target option is not for routine use, and is provided only for exceptional situations such as recovering from errors or mistakes, or when Terraform specifically suggests to use it
+│ as part of an error message.
+╵
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+
+module.controller.google_compute_instance.instance[2]: Creating...
+module.controller.google_compute_instance.instance[0]: Creating...
+module.controller.google_compute_instance.instance[1]: Creating...
+module.controller.google_compute_instance.instance[1]: Still creating... [10s elapsed]
+module.controller.google_compute_instance.instance[0]: Still creating... [10s elapsed]
+module.controller.google_compute_instance.instance[2]: Still creating... [10s elapsed]
+module.controller.google_compute_instance.instance[2]: Creation complete after 18s [id=projects/kubernetes-the-hard-way-389513/zones/us-central1-a/instances/controller-2]
+module.controller.google_compute_instance.instance[1]: Creation complete after 19s [id=projects/kubernetes-the-hard-way-389513/zones/us-central1-a/instances/controller-1]
+module.controller.google_compute_instance.instance[0]: Creation complete after 19s [id=projects/kubernetes-the-hard-way-389513/zones/us-central1-a/instances/controller-0]
+╷
+│ Warning: Applied changes may be incomplete
+│ 
+│ The plan was created with the -target option in effect, so some changes requested in the configuration may have been ignored and the output values may not be fully updated. Run the
+│ following command to verify that no other changes are pending:
+│     terraform plan
+│ 
+│ Note that the -target option is not suitable for routine use, and is provided only for exceptional situations such as recovering from errors or mistakes, or when Terraform specifically
+│ suggests to use it as part of an error message.
+╵
+
+Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
 ```
 
 ### Kubernetes Workers
@@ -589,106 +862,422 @@ Each worker instance requires a pod subnet allocation from the Kubernetes cluste
 
 Create three compute instances which will host the Kubernetes worker nodes:
 
+> file: main.tf
+```hcl
+module "worker" {
+  source = "./modules/compute"
+  is_worker = true
+  instance = {
+    count       = 3
+    name_prefix = "worker"
+    tags        = ["kubernetes-the-hard-way", "worker"]
+  }
+  network = {
+    name              = module.network.network.name
+    subnet_name       = module.network.subnet.name
+    subnet_cidr_range = module.config.subnet_ip_cidr_range.worker
+  }
+}
 ```
-for i in 0 1 2; do
-  gcloud compute instances create worker-${i} \
-    --async \
-    --boot-disk-size 200GB \
-    --can-ip-forward \
-    --image-family ubuntu-2004-lts \
-    --image-project ubuntu-os-cloud \
-    --machine-type e2-standard-2 \
-    --metadata pod-cidr=10.200.${i}.0/24 \
-    --private-network-ip 10.240.0.2${i} \
-    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
-    --subnet kubernetes \
-    --tags kubernetes-the-hard-way,worker
-done
+
+- Execute the terraform apply command to create three compute instances:
+
+```bash
+$ terraform apply -target=module.worker
+module.network.google_compute_network.kubernetes-the-hard-way: Refreshing state... [id=projects/kubernetes-the-hard-way-389513/global/networks/kubernetes-the-hard-way]
+module.network.google_compute_subnetwork.kubernetes: Refreshing state... [id=projects/kubernetes-the-hard-way-389513/regions/us-central1/subnetworks/kubernetes]
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # module.worker.google_compute_instance.instance[0] will be created
+  + resource "google_compute_instance" "instance" {
+      + can_ip_forward       = true
+      + cpu_platform         = (known after apply)
+      + current_status       = (known after apply)
+      + deletion_protection  = false
+      + enable_display       = false
+      + guest_accelerator    = (known after apply)
+      + id                   = (known after apply)
+      + instance_id          = (known after apply)
+      + label_fingerprint    = (known after apply)
+      + machine_type         = "e2-standard-2"
+      + metadata             = {
+          + "pod-cidr" = "10.200.0.0/24"
+        }
+      + metadata_fingerprint = (known after apply)
+      + min_cpu_platform     = (known after apply)
+      + name                 = "worker-0"
+      + project              = (known after apply)
+      + self_link            = (known after apply)
+      + tags                 = [
+          + "kubernetes-the-hard-way",
+          + "worker",
+        ]
+      + tags_fingerprint     = (known after apply)
+      + zone                 = "us-central1-a"
+
+      + boot_disk {
+          + auto_delete                = true
+          + device_name                = "worker-device-0"
+          + disk_encryption_key_sha256 = (known after apply)
+          + kms_key_self_link          = (known after apply)
+          + mode                       = "READ_WRITE"
+          + source                     = (known after apply)
+
+          + initialize_params {
+              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + labels = (known after apply)
+              + size   = 10
+              + type   = "pd-balanced"
+            }
+        }
+
+      + network_interface {
+          + ipv6_access_type   = (known after apply)
+          + name               = (known after apply)
+          + network            = (known after apply)
+          + network_ip         = "10.240.0.138"
+          + stack_type         = (known after apply)
+          + subnetwork         = "kubernetes"
+          + subnetwork_project = (known after apply)
+
+          + access_config {
+              + nat_ip       = (known after apply)
+              + network_tier = "STANDARD"
+            }
+        }
+
+      + scheduling {
+          + automatic_restart   = true
+          + on_host_maintenance = "MIGRATE"
+          + preemptible         = false
+          + provisioning_model  = "STANDARD"
+        }
+
+      + service_account {
+          + email  = (known after apply)
+          + scopes = [
+              + "https://www.googleapis.com/auth/compute",
+              + "https://www.googleapis.com/auth/devstorage.read_only",
+              + "https://www.googleapis.com/auth/logging.write",
+              + "https://www.googleapis.com/auth/monitoring",
+              + "https://www.googleapis.com/auth/service.management.readonly",
+              + "https://www.googleapis.com/auth/servicecontrol",
+            ]
+        }
+    }
+
+  # module.worker.google_compute_instance.instance[1] will be created
+  + resource "google_compute_instance" "instance" {
+      + can_ip_forward       = true
+      + cpu_platform         = (known after apply)
+      + current_status       = (known after apply)
+      + deletion_protection  = false
+      + enable_display       = false
+      + guest_accelerator    = (known after apply)
+      + id                   = (known after apply)
+      + instance_id          = (known after apply)
+      + label_fingerprint    = (known after apply)
+      + machine_type         = "e2-standard-2"
+      + metadata             = {
+          + "pod-cidr" = "10.200.1.0/24"
+        }
+      + metadata_fingerprint = (known after apply)
+      + min_cpu_platform     = (known after apply)
+      + name                 = "worker-1"
+      + project              = (known after apply)
+      + self_link            = (known after apply)
+      + tags                 = [
+          + "kubernetes-the-hard-way",
+          + "worker",
+        ]
+      + tags_fingerprint     = (known after apply)
+      + zone                 = "us-central1-a"
+
+      + boot_disk {
+          + auto_delete                = true
+          + device_name                = "worker-device-1"
+          + disk_encryption_key_sha256 = (known after apply)
+          + kms_key_self_link          = (known after apply)
+          + mode                       = "READ_WRITE"
+          + source                     = (known after apply)
+
+          + initialize_params {
+              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + labels = (known after apply)
+              + size   = 10
+              + type   = "pd-balanced"
+            }
+        }
+
+      + network_interface {
+          + ipv6_access_type   = (known after apply)
+          + name               = (known after apply)
+          + network            = (known after apply)
+          + network_ip         = "10.240.0.139"
+          + stack_type         = (known after apply)
+          + subnetwork         = "kubernetes"
+          + subnetwork_project = (known after apply)
+
+          + access_config {
+              + nat_ip       = (known after apply)
+              + network_tier = "STANDARD"
+            }
+        }
+
+      + scheduling {
+          + automatic_restart   = true
+          + on_host_maintenance = "MIGRATE"
+          + preemptible         = false
+          + provisioning_model  = "STANDARD"
+        }
+
+      + service_account {
+          + email  = (known after apply)
+          + scopes = [
+              + "https://www.googleapis.com/auth/compute",
+              + "https://www.googleapis.com/auth/devstorage.read_only",
+              + "https://www.googleapis.com/auth/logging.write",
+              + "https://www.googleapis.com/auth/monitoring",
+              + "https://www.googleapis.com/auth/service.management.readonly",
+              + "https://www.googleapis.com/auth/servicecontrol",
+            ]
+        }
+    }
+
+  # module.worker.google_compute_instance.instance[2] will be created
+  + resource "google_compute_instance" "instance" {
+      + can_ip_forward       = true
+      + cpu_platform         = (known after apply)
+      + current_status       = (known after apply)
+      + deletion_protection  = false
+      + enable_display       = false
+      + guest_accelerator    = (known after apply)
+      + id                   = (known after apply)
+      + instance_id          = (known after apply)
+      + label_fingerprint    = (known after apply)
+      + machine_type         = "e2-standard-2"
+      + metadata             = {
+          + "pod-cidr" = "10.200.2.0/24"
+        }
+      + metadata_fingerprint = (known after apply)
+      + min_cpu_platform     = (known after apply)
+      + name                 = "worker-2"
+      + project              = (known after apply)
+      + self_link            = (known after apply)
+      + tags                 = [
+          + "kubernetes-the-hard-way",
+          + "worker",
+        ]
+      + tags_fingerprint     = (known after apply)
+      + zone                 = "us-central1-a"
+
+      + boot_disk {
+          + auto_delete                = true
+          + device_name                = "worker-device-2"
+          + disk_encryption_key_sha256 = (known after apply)
+          + kms_key_self_link          = (known after apply)
+          + mode                       = "READ_WRITE"
+          + source                     = (known after apply)
+
+          + initialize_params {
+              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + labels = (known after apply)
+              + size   = 10
+              + type   = "pd-balanced"
+            }
+        }
+
+      + network_interface {
+          + ipv6_access_type   = (known after apply)
+          + name               = (known after apply)
+          + network            = (known after apply)
+          + network_ip         = "10.240.0.140"
+          + stack_type         = (known after apply)
+          + subnetwork         = "kubernetes"
+          + subnetwork_project = (known after apply)
+
+          + access_config {
+              + nat_ip       = (known after apply)
+              + network_tier = "STANDARD"
+            }
+        }
+
+      + scheduling {
+          + automatic_restart   = true
+          + on_host_maintenance = "MIGRATE"
+          + preemptible         = false
+          + provisioning_model  = "STANDARD"
+        }
+
+      + service_account {
+          + email  = (known after apply)
+          + scopes = [
+              + "https://www.googleapis.com/auth/compute",
+              + "https://www.googleapis.com/auth/devstorage.read_only",
+              + "https://www.googleapis.com/auth/logging.write",
+              + "https://www.googleapis.com/auth/monitoring",
+              + "https://www.googleapis.com/auth/service.management.readonly",
+              + "https://www.googleapis.com/auth/servicecontrol",
+            ]
+        }
+    }
+
+Plan: 3 to add, 0 to change, 0 to destroy.
+╷
+│ Warning: Resource targeting is in effect
+│ 
+│ You are creating a plan with the -target option, which means that the result of this plan may not represent all of the changes requested by the current configuration.
+│ 
+│ The -target option is not for routine use, and is provided only for exceptional situations such as recovering from errors or mistakes, or when Terraform specifically suggests to use it
+│ as part of an error message.
+╵
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+
+module.worker.google_compute_instance.instance[0]: Creating...
+module.worker.google_compute_instance.instance[1]: Creating...
+module.worker.google_compute_instance.instance[2]: Creating...
+module.worker.google_compute_instance.instance[0]: Still creating... [10s elapsed]
+module.worker.google_compute_instance.instance[1]: Still creating... [10s elapsed]
+module.worker.google_compute_instance.instance[2]: Still creating... [10s elapsed]
+module.worker.google_compute_instance.instance[0]: Creation complete after 19s [id=projects/kubernetes-the-hard-way-389513/zones/us-central1-a/instances/worker-0]
+module.worker.google_compute_instance.instance[1]: Still creating... [20s elapsed]
+module.worker.google_compute_instance.instance[2]: Still creating... [20s elapsed]
+module.worker.google_compute_instance.instance[2]: Creation complete after 28s [id=projects/kubernetes-the-hard-way-389513/zones/us-central1-a/instances/worker-2]
+module.worker.google_compute_instance.instance[1]: Creation complete after 29s [id=projects/kubernetes-the-hard-way-389513/zones/us-central1-a/instances/worker-1]
+╷
+│ Warning: Applied changes may be incomplete
+│ 
+│ The plan was created with the -target option in effect, so some changes requested in the configuration may have been ignored and the output values may not be fully updated. Run the
+│ following command to verify that no other changes are pending:
+│     terraform plan
+│ 
+│ Note that the -target option is not suitable for routine use, and is provided only for exceptional situations such as recovering from errors or mistakes, or when Terraform specifically
+│ suggests to use it as part of an error message.
+╵
+
+Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
 ```
 
 ### Verification
 
-List the compute instances in your default compute zone:
-
-```
-gcloud compute instances list --filter="tags.items=kubernetes-the-hard-way"
-```
-
-> output
-
-```
-NAME          ZONE        MACHINE_TYPE   PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP    STATUS
-controller-0  us-west1-c  e2-standard-2               10.240.0.10  XX.XX.XX.XXX   RUNNING
-controller-1  us-west1-c  e2-standard-2               10.240.0.11  XX.XXX.XXX.XX  RUNNING
-controller-2  us-west1-c  e2-standard-2               10.240.0.12  XX.XXX.XX.XXX  RUNNING
-worker-0      us-west1-c  e2-standard-2               10.240.0.20  XX.XX.XXX.XXX  RUNNING
-worker-1      us-west1-c  e2-standard-2               10.240.0.21  XX.XX.XX.XXX   RUNNING
-worker-2      us-west1-c  e2-standard-2               10.240.0.22  XX.XXX.XX.XX   RUNNING
+```bash
+$ terraform show
+NOTE: Output not included for security reasons.
 ```
 
 ## Configuring SSH Access
 
-SSH will be used to configure the controller and worker instances. When connecting to compute instances for the first time SSH keys will be generated for you and stored in the project or instance metadata as described in the [connecting to instances](https://cloud.google.com/compute/docs/instances/connecting-to-instance) documentation.
+SSH will be used to configure the controller and worker instances.
+We will use a project wide SSH key to provide access to all instances.
+This SSH key will also be used by ansible to configure the instances.
 
-Test SSH access to the `controller-0` compute instances:
+### Generating an SSH Key Pair
 
-```
-gcloud compute ssh controller-0
-```
-
-If this is your first time connecting to a compute instance SSH keys will be generated for you. Enter a passphrase at the prompt to continue:
-
-```
-WARNING: The public SSH key file for gcloud does not exist.
-WARNING: The private SSH key file for gcloud does not exist.
-WARNING: You do not have an SSH key for gcloud.
-WARNING: SSH keygen will be executed to generate a key.
+```bash
+$ ssh-keygen -t rsa -b 4096 -C "anonyman637" -f ~/.ssh/gcloud
 Generating public/private rsa key pair.
 Enter passphrase (empty for no passphrase):
 Enter same passphrase again:
-```
-
-At this point the generated SSH keys will be uploaded and stored in your project:
-
-```
-Your identification has been saved in /home/$USER/.ssh/google_compute_engine.
-Your public key has been saved in /home/$USER/.ssh/google_compute_engine.pub.
-The key fingerprint is:
-SHA256:nz1i8jHmgQuGt+WscqP5SeIaSy5wyIJeL71MuV+QruE $USER@$HOSTNAME
-The key's randomart image is:
-+---[RSA 2048]----+
-|                 |
-|                 |
-|                 |
-|        .        |
-|o.     oS        |
-|=... .o .o o     |
-|+.+ =+=.+.X o    |
-|.+ ==O*B.B = .   |
-| .+.=EB++ o      |
-+----[SHA256]-----+
-Updating project ssh metadata...-Updated [https://www.googleapis.com/compute/v1/projects/$PROJECT_ID].
-Updating project ssh metadata...done.
-Waiting for SSH key to propagate.
-```
-
-After the SSH keys have been updated you'll be logged into the `controller-0` instance:
-
-```
-Welcome to Ubuntu 20.04.2 LTS (GNU/Linux 5.4.0-1042-gcp x86_64)
+Your identification has been saved in ~/.ssh/gcloud
+Your public key has been saved in ~/.ssh/gcloud.pub
+...
+...
 ...
 ```
 
-Type `exit` at the prompt to exit the `controller-0` compute instance:
+### Adding the Public Key to GCP
 
-```
-$USER@controller-0:~$ exit
-```
-> output
+```hcl
+resource "google_compute_project_metadata" "my_ssh_key" {
+  metadata = {
+		"ssh-keys" = <<EOT
+      anonyman637: ssh-rsa <public-ssh-key> anonyman637
 
+    EOT
+  }
+}
 ```
+- Executing terraform apply
+```bash
+$ terraform apply -target=module.resource
+
+module.resource.google_project_service.compute_engine_api: Refreshing state... [id=kubernetes-the-hard-way-389513/compute.googleapis.com]
+module.resource.google_project_service.cloud_resource_manager_api: Refreshing state... [id=kubernetes-the-hard-way-389513/cloudresourcemanager.googleapis.com]
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # module.resource.google_compute_project_metadata.my_ssh_key will be created
+  + resource "google_compute_project_metadata" "my_ssh_key" {
+      + id       = (known after apply)
+      + metadata = {
+          + "ssh-keys" = <<-EOT
+                anonyman637: ssh-rsa <public-ssh-key> anonyman637
+            EOT
+        }
+      + project  = (known after apply)
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+╷
+│ Warning: Resource targeting is in effect
+│ 
+│ You are creating a plan with the -target option, which means that the result of this plan may not represent all of the changes requested by the current configuration.
+│ 
+│ The -target option is not for routine use, and is provided only for exceptional situations such as recovering from errors or mistakes, or when Terraform specifically suggests to use it
+│ as part of an error message.
+╵
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+
+module.resource.google_compute_project_metadata.my_ssh_key: Creating...
+module.resource.google_compute_project_metadata.my_ssh_key: Still creating... [10s elapsed]
+module.resource.google_compute_project_metadata.my_ssh_key: Creation complete after 13s [id=kubernetes-the-hard-way-389513]
+╷
+│ Warning: Applied changes may be incomplete
+│ 
+│ The plan was created with the -target option in effect, so some changes requested in the configuration may have been ignored and the output values may not be fully updated. Run the
+│ following command to verify that no other changes are pending:
+│     terraform plan
+│ 
+│ Note that the -target option is not suitable for routine use, and is provided only for exceptional situations such as recovering from errors or mistakes, or when Terraform specifically
+│ suggests to use it as part of an error message.
+╵
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+```
+
+### SSH into the Controller Nodes
+```bash
+$ ssh -i ~/.ssh/gcloud anonyman637@<controller-0-external-ip>
+
+Linux controller-1 5.10.0-22-cloud-amd64 #1 SMP Debian 5.10.178-3 (2023-04-22) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: ...
+anonyman637@controller-1:~$ exit
 logout
-Connection to XX.XX.XX.XXX closed
+Connection to <controller-0-external-ip> closed.
 ```
 
 Next: [Provisioning a CA and Generating TLS Certificates](04-certificate-authority.md)

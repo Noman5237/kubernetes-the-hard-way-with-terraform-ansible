@@ -20,7 +20,7 @@ resource "google_compute_subnetwork" "kubernetes" {
 # Create a firewall rule that allows internal communication across all protocols
 resource "google_compute_firewall" "kubernetes-allow-internal" {
   name    = "kubernetes-allow-internal"
-	project = module.config.project_id 
+  project = module.config.project_id
   network = google_compute_network.kubernetes-the-hard-way.name
   allow {
     protocol = "icmp"
@@ -34,10 +34,8 @@ resource "google_compute_firewall" "kubernetes-allow-internal" {
     ports    = ["0-65535"]
   }
   source_ranges = [
-    # control plane
-    "10.240.0.0/24",
-    # worker nodes
-    "10.200.0.0/16"
+    module.config.subnet_ip_cidr_range.node,
+    module.config.subnet_ip_cidr_range.pod
   ]
 }
 
