@@ -7,6 +7,10 @@ for i in $(seq 0 $((no_of_workers-1))); do
 	instance_name=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].key')
 	# replace _ with - in instance_name
 	instance_name=$(echo $instance_name | sed 's/_/-/g')
+
+	mkdir -p $PROJECT_ROOT/certificates/worker/${instance_name}
+	cd $PROJECT_ROOT/certificates/worker/${instance_name}
+
 	cat > ${instance_name}-csr.json <<EOF
 {
 	"CN": "system:node:${instance_name}",
