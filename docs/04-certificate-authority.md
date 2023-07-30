@@ -7,9 +7,11 @@ In this lab you will provision a [PKI Infrastructure](https://en.wikipedia.org/w
 In this section you will provision a Certificate Authority that can be used to generate additional TLS certificates.
 
 Generate the CA configuration file, certificate, and private key:
+> file: certificates/scripts/generate-ca-certificate.sh
 
 ```
-{
+mkdir -p $PROJECT_ROOT/certificates/ca
+cd $PROJECT_ROOT/certificates/ca
 
 cat > ca-config.json <<EOF
 {
@@ -47,8 +49,6 @@ cat > ca-csr.json <<EOF
 EOF
 
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca
-
-}
 ```
 
 Results:
@@ -65,9 +65,10 @@ In this section you will generate client and server certificates for each Kubern
 ### The Admin Client Certificate
 
 Generate the `admin` client certificate and private key:
-
+> file: certificates/scripts/generate-admin-certificate.sh
 ```
-{
+mkdir -p $PROJECT_ROOT/certificates/admin
+cd $PROJECT_ROOT/certificates/admin
 
 cat > admin-csr.json <<EOF
 {
@@ -89,13 +90,12 @@ cat > admin-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  admin-csr.json | cfssljson -bare admin
+	-ca=$PROJECT_ROOT/certificates/ca/ca.pem \
+	-ca-key=$PROJECT_ROOT/certificates/ca/ca-key.pem \
+	-config=$PROJECT_ROOT/certificates/ca/ca-config.json \
+	-profile=kubernetes \
+	admin-csr.json | cfssljson -bare admin
 
-}
 ```
 
 Results:
@@ -105,46 +105,100 @@ admin-key.pem
 admin.pem
 ```
 
+### Scrap important terraform output json to yaml for ansible group_vars
+> file: scripts/export-nodes-config-terraform-to-ansible.sh
+
+```
+cd $PROJECT_ROOT/infrastructures
+
+mkdir -p $PROJECT_ROOT/automation/group_vars
+
+terraform show -json | \
+	jq -r '[.values.root_module.child_modules[] 
+	| select(.address == "module.controller")] 
+	| .[].resources[].values 
+	| {
+			(.name): {
+				ip: { 
+					internal: .network_interface[0].network_ip, 
+					external: .network_interface[0].access_config[0].nat_ip
+				},
+				username: "anonyman637"
+			}
+		}' | \
+	jq -s 'reduce .[] as $item ({}; . * $item) | { "control_plane": . }' | \
+	awk '{ gsub("-", "_"); print }' | \
+	yq -P > $PROJECT_ROOT/automation/group_vars/control_plane.yml
+
+terraform show -json | \
+	jq -r '[.values.root_module.child_modules[] 
+	| select(.address == "module.worker")] 
+	| .[].resources[].values 
+	| {
+			(.name): {
+				ip: { 
+					internal: .network_interface[0].network_ip, 
+					external: .network_interface[0].access_config[0].nat_ip
+				},
+				username: "anonyman637"
+			}
+		}' | \
+	jq -s 'reduce .[] as $item ({}; . * $item) | { "worker_plane": . }' | \
+	awk '{ gsub("-", "_"); print }' | \
+	yq -P > $PROJECT_ROOT/automation/group_vars/worker_plane.yml
+
+```
+
 ### The Kubelet Client Certificates
 
-Kubernetes uses a [special-purpose authorization mode](https://kubernetes.io/docs/admin/authorization/node/) called Node Authorizer, that specifically authorizes API requests made by [Kubelets](https://kubernetes.io/docs/concepts/overview/components/#kubelet). In order to be authorized by the Node Authorizer, Kubelets must use a credential that identifies them as being in the `system:nodes` group, with a username of `system:node:<nodeName>`. In this section you will create a certificate for each Kubernetes worker node that meets the Node Authorizer requirements.
+Kubernetes uses a [special-purpose authorization mode](https://kubernetes.io/docs/admin/authorization/node/) called Node Authorizer, that specifically authorizes API requests made by [Kubelets](https://kubernetes.io/docs/concepts/overview/components/#kubelet). In order to be authorized by the Node Authorizer, Kubelets must use a credential that identifies them as being in the `system:nodes` group, with a username of `system:node:<nodeName>`. In this section you will create a certificate for each Kubernetes worker node that meets the Node Authorizer requirements. Here we will be using the `worker_plane` group_vars to generate the certificates.
 
 Generate a certificate and private key for each Kubernetes worker node:
 
+> file: certificates/scripts/generate-worker-certificates.sh
 ```
-for instance in worker-0 worker-1 worker-2; do
-cat > ${instance}-csr.json <<EOF
+mkdir -p $PROJECT_ROOT/certificates/worker
+cd $PROJECT_ROOT/certificates/worker
+
+no_of_workers=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | length')
+
+for i in $(seq 0 $((no_of_workers-1))); do
+	instance_name=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].key')
+	# replace _ with - in instance_name
+	instance_name=$(echo $instance_name | sed 's/_/-/g')
+
+	mkdir -p $PROJECT_ROOT/certificates/worker/${instance_name}
+	cd $PROJECT_ROOT/certificates/worker/${instance_name}
+
+	cat > ${instance_name}-csr.json <<EOF
 {
-  "CN": "system:node:${instance}",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "system:nodes",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
-  ]
+	"CN": "system:node:${instance_name}",
+	"key": {
+		"algo": "rsa",
+		"size": 2048
+	},
+	"names": [
+		{
+			"C": "US",
+			"L": "Portland",
+			"O": "system:nodes",
+			"OU": "Kubernetes The Hard Way",
+			"ST": "Oregon"
+		}
+	]
 }
 EOF
 
-EXTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].accessConfigs[0].natIP)')
+	EXTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].value.ip.external')
+	INTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].value.ip.internal')
 
-INTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].networkIP)')
-
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=${instance},${EXTERNAL_IP},${INTERNAL_IP} \
-  -profile=kubernetes \
-  ${instance}-csr.json | cfssljson -bare ${instance}
+	cfssl gencert \
+		-ca=$PROJECT_ROOT/certificates/ca/ca.pem \
+		-ca-key=$PROJECT_ROOT/certificates/ca/ca-key.pem \
+		-config=$PROJECT_ROOT/certificates/ca/ca-config.json \
+		-hostname=${instance_name},${EXTERNAL_IP},${INTERNAL_IP} \
+		-profile=kubernetes \
+		${instance_name}-csr.json | cfssljson -bare ${instance_name}
 done
 ```
 
@@ -163,8 +217,10 @@ worker-2.pem
 
 Generate the `kube-controller-manager` client certificate and private key:
 
+> file: certificates/scripts/generate-controller-manager-certificate.sh
 ```
-{
+mkdir -p $PROJECT_ROOT/certificates/controller-manager
+cd $PROJECT_ROOT/certificates/controller-manager
 
 cat > kube-controller-manager-csr.json <<EOF
 {
@@ -186,13 +242,12 @@ cat > kube-controller-manager-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
+	-ca=$PROJECT_ROOT/certificates/ca/ca.pem \
+	-ca-key=$PROJECT_ROOT/certificates/ca/ca-key.pem \
+	-config=$PROJECT_ROOT/certificates/ca/ca-config.json \
+	-profile=kubernetes \
+	kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
 
-}
 ```
 
 Results:
@@ -207,8 +262,10 @@ kube-controller-manager.pem
 
 Generate the `kube-proxy` client certificate and private key:
 
+> file: certificates/scripts/generate-kube-proxy-certificate.sh
 ```
-{
+mkdir -p $PROJECT_ROOT/certificates/kube-proxy
+cd $PROJECT_ROOT/certificates/kube-proxy
 
 cat > kube-proxy-csr.json <<EOF
 {
@@ -230,13 +287,12 @@ cat > kube-proxy-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-proxy-csr.json | cfssljson -bare kube-proxy
+	-ca=$PROJECT_ROOT/certificates/ca/ca.pem \
+	-ca-key=$PROJECT_ROOT/certificates/ca/ca-key.pem \
+	-config=$PROJECT_ROOT/certificates/ca/ca-config.json \
+	-profile=kubernetes \
+	kube-proxy-csr.json | cfssljson -bare kube-proxy
 
-}
 ```
 
 Results:
@@ -250,8 +306,10 @@ kube-proxy.pem
 
 Generate the `kube-scheduler` client certificate and private key:
 
+> file: certificates/scripts/generate-kube-scheduler-certificate.sh
 ```
-{
+mkdir -p $PROJECT_ROOT/certificates/kube-scheduler
+cd $PROJECT_ROOT/certificates/kube-scheduler
 
 cat > kube-scheduler-csr.json <<EOF
 {
@@ -273,13 +331,12 @@ cat > kube-scheduler-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-scheduler-csr.json | cfssljson -bare kube-scheduler
+	-ca=$PROJECT_ROOT/certificates/ca/ca.pem \
+	-ca-key=$PROJECT_ROOT/certificates/ca/ca-key.pem \
+	-config=$PROJECT_ROOT/certificates/ca/ca-config.json \
+	-profile=kubernetes \
+	kube-scheduler-csr.json | cfssljson -bare kube-scheduler
 
-}
 ```
 
 Results:
@@ -297,14 +354,23 @@ The `kubernetes-the-hard-way` static IP address will be included in the list of 
 Generate the Kubernetes API Server certificate and private key:
 
 ```
-{
+mkdir -p $PROJECT_ROOT/certificates/api-server
 
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
-
+control_plane_internal_ip_addresses=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | to_entries | .[].value.ip.internal' | tr '\n' ',' | sed 's/,$//g')
 KUBERNETES_HOSTNAMES=kubernetes,kubernetes.default,kubernetes.default.svc,kubernetes.default.svc.cluster,kubernetes.svc.cluster.local
 
+cd $PROJECT_ROOT/infrastructures
+kubernetes_public_address=$(
+	terraform show -json |
+		jq -r '[.values.root_module.child_modules[]
+  	| select(.address == "module.network")] 
+		| .[].resources[] 
+		| select(.name == "kubernetes-the-hard-way") 
+		| select(.values.address_type == "EXTERNAL") 
+		| .values.address'
+)
+
+cd $PROJECT_ROOT/certificates/api-server
 cat > kubernetes-csr.json <<EOF
 {
   "CN": "kubernetes",
@@ -325,14 +391,13 @@ cat > kubernetes-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=10.32.0.1,10.240.0.10,10.240.0.11,10.240.0.12,${KUBERNETES_PUBLIC_ADDRESS},127.0.0.1,${KUBERNETES_HOSTNAMES} \
-  -profile=kubernetes \
-  kubernetes-csr.json | cfssljson -bare kubernetes
+	-ca=$PROJECT_ROOT/certificates/ca/ca.pem \
+	-ca-key=$PROJECT_ROOT/certificates/ca/ca-key.pem \
+	-config=$PROJECT_ROOT/certificates/ca/ca-config.json \
+	-hostname=10.32.0.1,${control_plane_internal_ip_addresses},${kubernetes_public_address},127.0.0.1,${KUBERNETES_HOSTNAMES} \
+	-profile=kubernetes \
+	kubernetes-csr.json | cfssljson -bare kubernetes
 
-}
 ```
 
 > The Kubernetes API server is automatically assigned the `kubernetes` internal dns name, which will be linked to the first IP address (`10.32.0.1`) from the address range (`10.32.0.0/24`) reserved for internal cluster services during the [control plane bootstrapping](08-bootstrapping-kubernetes-controllers.md#configure-the-kubernetes-api-server) lab.
@@ -351,7 +416,8 @@ The Kubernetes Controller Manager leverages a key pair to generate and sign serv
 Generate the `service-account` certificate and private key:
 
 ```
-{
+mkdir -p $PROJECT_ROOT/certificates/service-account
+cd $PROJECT_ROOT/certificates/service-account
 
 cat > service-account-csr.json <<EOF
 {
@@ -373,13 +439,12 @@ cat > service-account-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  service-account-csr.json | cfssljson -bare service-account
+	-ca=$PROJECT_ROOT/certificates/ca/ca.pem \
+	-ca-key=$PROJECT_ROOT/certificates/ca/ca-key.pem \
+	-config=$PROJECT_ROOT/certificates/ca/ca-config.json \
+	-profile=kubernetes \
+	service-account-csr.json | cfssljson -bare service-account
 
-}
 ```
 
 Results:
@@ -395,17 +460,49 @@ service-account.pem
 Copy the appropriate certificates and private keys to each worker instance:
 
 ```
-for instance in worker-0 worker-1 worker-2; do
-  gcloud compute scp ca.pem ${instance}-key.pem ${instance}.pem ${instance}:~/
+no_of_workers=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | length')
+
+echo "Copying certificates to workers..."
+for i in $(seq 0 $((no_of_workers - 1))); do
+	instance_name=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].key')
+	# replace _ with - in instance_name
+	instance_name=$(echo $instance_name | sed 's/_/-/g')
+
+	EXTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].value.ip.external')
+
+	echo "Copying certificates to ${instance_name}..."
+	echo "external ip: ${EXTERNAL_IP}"
+	scp -o StrictHostKeyChecking=no \
+		-i ~/.ssh/gcloud \
+		$PROJECT_ROOT/certificates/ca/ca.pem \
+		$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}-key.pem \
+		$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}.pem \
+		anonyman637@${EXTERNAL_IP}:~/
 done
+
 ```
 
 Copy the appropriate certificates and private keys to each controller instance:
 
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem \
-    service-account-key.pem service-account.pem ${instance}:~/
+no_of_controllers=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | length')
+
+echo "Copying certificates to controllers..."
+for i in $(seq 0 $((no_of_controllers - 1))); do
+	EXTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | to_entries | .['"$i"'].value.ip.external')
+
+	echo "Copying certificates to ${instance_name}..."
+	echo "external ip: ${EXTERNAL_IP}"
+
+	scp -o StrictHostKeyChecking=no \
+		-i ~/.ssh/gcloud \
+		$PROJECT_ROOT/certificates/ca/ca.pem \
+		$PROJECT_ROOT/certificates/ca/ca-key.pem \
+		$PROJECT_ROOT/certificates/api-server/kubernetes.pem \
+		$PROJECT_ROOT/certificates/api-server/kubernetes-key.pem \
+		$PROJECT_ROOT/certificates/service-account/service-account.pem \
+		$PROJECT_ROOT/certificates/service-account/service-account-key.pem \
+		anonyman637@${EXTERNAL_IP}:~/
 done
 ```
 
