@@ -1,0 +1,43 @@
+---
+- hosts: all 
+  become: yes
+
+  tasks:
+    - name: check for updates
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    - name: Remove apt lock file
+      file:
+        state: absent
+        path: "/var/lib/dpkg/lock"
+    - name: install docker.io
+      apt:
+        name: docker.io
+        state: present
+      register: apt_status
+      until: apt_status is success
+      retries: 5
+      delay: 10
+    - name: enable docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+    - name: create a docker group if it does not exist
+      group:
+        name: docker
+        state: present
+    - name: add user to the docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+    - name: install pip
+      apt:
+        name: python3-pip
+        state: present
+    - name: pip install docker
+      pip:
+        name: docker
+        state: present
