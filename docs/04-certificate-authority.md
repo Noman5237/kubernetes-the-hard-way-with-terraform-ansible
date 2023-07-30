@@ -353,6 +353,7 @@ The `kubernetes-the-hard-way` static IP address will be included in the list of 
 
 Generate the Kubernetes API Server certificate and private key:
 
+> file: certificates/scripts/generate-kubernetes-api-server-certificate.sh
 ```
 mkdir -p $PROJECT_ROOT/certificates/api-server
 
@@ -415,6 +416,7 @@ The Kubernetes Controller Manager leverages a key pair to generate and sign serv
 
 Generate the `service-account` certificate and private key:
 
+> file: certificates/scripts/generate-service-account-certificate.sh
 ```
 mkdir -p $PROJECT_ROOT/certificates/service-account
 cd $PROJECT_ROOT/certificates/service-account
@@ -459,6 +461,7 @@ service-account.pem
 
 Copy the appropriate certificates and private keys to each worker instance:
 
+> file: automation/playbooks/installation/1-distribute-worker-certificates.sh
 ```
 no_of_workers=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | length')
 
@@ -484,6 +487,7 @@ done
 
 Copy the appropriate certificates and private keys to each controller instance:
 
+> file: automation/playbooks/installation/2-distribute-controller-certificates.sh
 ```
 no_of_controllers=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | length')
 
