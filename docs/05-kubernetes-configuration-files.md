@@ -13,9 +13,16 @@ Each kubeconfig requires a Kubernetes API Server to connect to. To support high 
 Retrieve the `kubernetes-the-hard-way` static IP address:
 
 ```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+cd $PROJECT_ROOT/infrastructures
+kubernetes_public_address=$(
+	terraform show -json |
+		jq -r '[.values.root_module.child_modules[]
+  	| select(.address == "module.network")] 
+		| .[].resources[] 
+		| select(.name == "kubernetes-the-hard-way") 
+		| select(.values.address_type == "EXTERNAL") 
+		| .values.address'
+)
 ```
 
 ### The kubelet Kubernetes Configuration File
@@ -26,26 +33,45 @@ When generating kubeconfig files for Kubelets the client certificate matching th
 
 Generate a kubeconfig file for each worker node:
 
+> file: config/kubeconfig/scripts/generate-worker-kubeconfigs.sh
 ```
-for instance in worker-0 worker-1 worker-2; do
-  kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
-    --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
-    --kubeconfig=${instance}.kubeconfig
+no_of_workers=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | length')
 
-  kubectl config set-credentials system:node:${instance} \
-    --client-certificate=${instance}.pem \
-    --client-key=${instance}-key.pem \
-    --embed-certs=true \
-    --kubeconfig=${instance}.kubeconfig
+cd $PROJECT_ROOT/infrastructures
+kubernetes_public_address=$(
+	terraform show -json |
+		jq -r '[.values.root_module.child_modules[]
+  	| select(.address == "module.network")] 
+		| .[].resources[] 
+		| select(.name == "kubernetes-the-hard-way") 
+		| select(.values.address_type == "EXTERNAL") 
+		| .values.address'
+)
 
-  kubectl config set-context default \
-    --cluster=kubernetes-the-hard-way \
-    --user=system:node:${instance} \
-    --kubeconfig=${instance}.kubeconfig
+mkdir -p $PROJECT_ROOT/config/kubeconfig/workers
+cd $PROJECT_ROOT/config/kubeconfig/workers
 
-  kubectl config use-context default --kubeconfig=${instance}.kubeconfig
+for i in $(seq 0 $((no_of_workers - 1))); do
+	instance_name=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].key')
+	# replace _ with - in instance_name
+	instance_name=$(echo $instance_name | sed 's/_/-/g')
+
+	kubectl config set-cluster kubernetes-the-hard-way \
+		--certificate-authority=$PROJECT_ROOT/certificates/ca/ca.pem \
+		--embed-certs=true \
+		--server=https://${kubernetes_public_address}:6443 \
+		--kubeconfig=${instance_name}.kubeconfig
+
+	kubectl config set-credentials system:node:${instance_name} \
+		--client-certificate=$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}.pem \
+		--client-key=$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}-key.pem \
+		--embed-certs=true \
+		--kubeconfig=${instance_name}.kubeconfig
+
+	kubectl config set-context default \
+		--cluster=kubernetes-the-hard-way \
+		--user=system:node:${instance_name} \
+		--kubeconfig=${instance_name}.kubeconfig
 done
 ```
 
@@ -61,27 +87,40 @@ worker-2.kubeconfig
 
 Generate a kubeconfig file for the `kube-proxy` service:
 
+> file: config/kubeconfig/scripts/generate-kube-proxy-kubeconfig.sh
 ```
-{
-  kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
-    --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
-    --kubeconfig=kube-proxy.kubeconfig
+cd $PROJECT_ROOT/infrastructures
+kubernetes_public_address=$(
+	terraform show -json |
+		jq -r '[.values.root_module.child_modules[]
+  	| select(.address == "module.network")] 
+		| .[].resources[] 
+		| select(.name == "kubernetes-the-hard-way") 
+		| select(.values.address_type == "EXTERNAL") 
+		| .values.address'
+)
 
-  kubectl config set-credentials system:kube-proxy \
-    --client-certificate=kube-proxy.pem \
-    --client-key=kube-proxy-key.pem \
-    --embed-certs=true \
-    --kubeconfig=kube-proxy.kubeconfig
+mkdir -p $PROJECT_ROOT/config/kubeconfig/kube-proxy
+cd $PROJECT_ROOT/config/kubeconfig/kube-proxy
 
-  kubectl config set-context default \
-    --cluster=kubernetes-the-hard-way \
-    --user=system:kube-proxy \
-    --kubeconfig=kube-proxy.kubeconfig
+kubectl config set-cluster kubernetes-the-hard-way \
+	--certificate-authority=$PROJECT_ROOT/certificates/ca/ca.pem \
+	--embed-certs=true \
+	--server=https://${kubernetes_public_address}:6443 \
+	--kubeconfig=kube-proxy.kubeconfig
 
-  kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
-}
+kubectl config set-credentials system:kube-proxy \
+	--client-certificate=$PROJECT_ROOT/certificates/kube-proxy/kube-proxy.pem \
+	--client-key=$PROJECT_ROOT/certificates/kube-proxy/kube-proxy-key.pem \
+	--embed-certs=true \
+	--kubeconfig=kube-proxy.kubeconfig
+
+kubectl config set-context default \
+	--cluster=kubernetes-the-hard-way \
+	--user=system:kube-proxy \
+	--kubeconfig=kube-proxy.kubeconfig
+
+kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 ```
 
 Results:
@@ -94,27 +133,30 @@ kube-proxy.kubeconfig
 
 Generate a kubeconfig file for the `kube-controller-manager` service:
 
+> file: config/kubeconfig/scripts/generate-controller-manager-kubeconfig.sh
 ```
-{
-  kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
-    --embed-certs=true \
-    --server=https://127.0.0.1:6443 \
-    --kubeconfig=kube-controller-manager.kubeconfig
+mkdir -p $PROJECT_ROOT/config/kubeconfig/controller-manager
+cd $PROJECT_ROOT/config/kubeconfig/controller-manager
 
-  kubectl config set-credentials system:kube-controller-manager \
-    --client-certificate=kube-controller-manager.pem \
-    --client-key=kube-controller-manager-key.pem \
-    --embed-certs=true \
-    --kubeconfig=kube-controller-manager.kubeconfig
+kubectl config set-cluster kubernetes-the-hard-way \
+	--certificate-authority=$PROJECT_ROOT/certificates/ca/ca.pem \
+	--embed-certs=true \
+	--server=https://127.0.0.1:6443 \
+	--kubeconfig=kube-controller-manager.kubeconfig
 
-  kubectl config set-context default \
-    --cluster=kubernetes-the-hard-way \
-    --user=system:kube-controller-manager \
-    --kubeconfig=kube-controller-manager.kubeconfig
+kubectl config set-credentials system:kube-controller-manager \
+	--client-certificate=$PROJECT_ROOT/certificates/controller-manager/kube-controller-manager.pem \
+	--client-key=$PROJECT_ROOT/certificates/controller-manager/kube-controller-manager-key.pem \
+	--embed-certs=true \
+	--kubeconfig=kube-controller-manager.kubeconfig
 
-  kubectl config use-context default --kubeconfig=kube-controller-manager.kubeconfig
-}
+kubectl config set-context default \
+	--cluster=kubernetes-the-hard-way \
+	--user=system:kube-controller-manager \
+	--kubeconfig=kube-controller-manager.kubeconfig
+
+kubectl config use-context default --kubeconfig=kube-controller-manager.kubeconfig
+
 ```
 
 Results:
@@ -128,27 +170,29 @@ kube-controller-manager.kubeconfig
 
 Generate a kubeconfig file for the `kube-scheduler` service:
 
+> file: config/kubeconfig/scripts/generate-scheduler-kubeconfig.sh
 ```
-{
-  kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
-    --embed-certs=true \
-    --server=https://127.0.0.1:6443 \
-    --kubeconfig=kube-scheduler.kubeconfig
+mkdir -p $PROJECT_ROOT/config/kubeconfig/kube-scheduler
+cd $PROJECT_ROOT/config/kubeconfig/kube-scheduler
 
-  kubectl config set-credentials system:kube-scheduler \
-    --client-certificate=kube-scheduler.pem \
-    --client-key=kube-scheduler-key.pem \
-    --embed-certs=true \
-    --kubeconfig=kube-scheduler.kubeconfig
+kubectl config set-cluster kubernetes-the-hard-way \
+	--certificate-authority=$PROJECT_ROOT/certificates/ca/ca.pem \
+	--embed-certs=true \
+	--server=https://127.0.0.1:6443 \
+	--kubeconfig=kube-scheduler.kubeconfig
 
-  kubectl config set-context default \
-    --cluster=kubernetes-the-hard-way \
-    --user=system:kube-scheduler \
-    --kubeconfig=kube-scheduler.kubeconfig
+kubectl config set-credentials system:kube-scheduler \
+	--client-certificate=$PROJECT_ROOT/certificates/kube-scheduler/kube-scheduler.pem \
+	--client-key=$PROJECT_ROOT/certificates/kube-scheduler/kube-scheduler-key.pem \
+	--embed-certs=true \
+	--kubeconfig=kube-scheduler.kubeconfig
 
-  kubectl config use-context default --kubeconfig=kube-scheduler.kubeconfig
-}
+kubectl config set-context default \
+	--cluster=kubernetes-the-hard-way \
+	--user=system:kube-scheduler \
+	--kubeconfig=kube-scheduler.kubeconfig
+
+kubectl config use-context default --kubeconfig=kube-scheduler.kubeconfig
 ```
 
 Results:
@@ -161,27 +205,29 @@ kube-scheduler.kubeconfig
 
 Generate a kubeconfig file for the `admin` user:
 
+> file: config/kubeconfig/scripts/generate-admin-kubeconfig.sh
 ```
-{
-  kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
-    --embed-certs=true \
-    --server=https://127.0.0.1:6443 \
-    --kubeconfig=admin.kubeconfig
+mkdir -p $PROJECT_ROOT/config/kubeconfig/admin
+cd $PROJECT_ROOT/config/kubeconfig/admin
 
-  kubectl config set-credentials admin \
-    --client-certificate=admin.pem \
-    --client-key=admin-key.pem \
-    --embed-certs=true \
-    --kubeconfig=admin.kubeconfig
+kubectl config set-cluster kubernetes-the-hard-way \
+	--certificate-authority=$PROJECT_ROOT/certificates/ca/ca.pem \
+	--embed-certs=true \
+	--server=https://127.0.0.1:6443 \
+	--kubeconfig=admin.kubeconfig
 
-  kubectl config set-context default \
-    --cluster=kubernetes-the-hard-way \
-    --user=admin \
-    --kubeconfig=admin.kubeconfig
+kubectl config set-credentials admin \
+	--client-certificate=$PROJECT_ROOT/certificates/admin/admin.pem \
+	--client-key=$PROJECT_ROOT/certificates/admin/admin-key.pem \
+	--embed-certs=true \
+	--kubeconfig=admin.kubeconfig
 
-  kubectl config use-context default --kubeconfig=admin.kubeconfig
-}
+kubectl config set-context default \
+	--cluster=kubernetes-the-hard-way \
+	--user=admin \
+	--kubeconfig=admin.kubeconfig
+
+kubectl config use-context default --kubeconfig=admin.kubeconfig
 ```
 
 Results:
@@ -190,24 +236,47 @@ Results:
 admin.kubeconfig
 ```
 
-
-## 
-
 ## Distribute the Kubernetes Configuration Files
 
 Copy the appropriate `kubelet` and `kube-proxy` kubeconfig files to each worker instance:
 
+> file: automation/playbooks/installation/3-distribute-worker-kubeconfig.sh
 ```
-for instance in worker-0 worker-1 worker-2; do
-  gcloud compute scp ${instance}.kubeconfig kube-proxy.kubeconfig ${instance}:~/
+no_of_workers=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | length')
+
+echo "Copying certificates to workers..."
+for i in $(seq 0 $((no_of_workers - 1))); do
+	instance_name=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].key')
+	# replace _ with - in instance_name
+	instance_name=$(echo $instance_name | sed 's/_/-/g')
+
+	EXTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].value.ip.external')
+
+	echo "Copying kubeconfigs to ${instance_name}..."
+	echo "external ip: ${EXTERNAL_IP}"
+	scp -o StrictHostKeyChecking=no \
+		-i ~/.ssh/gcloud \
+		$PROJECT_ROOT/config/kubeconfig/workers/${instance_name}.kubeconfig \
+		$PROJECT_ROOT/config/kubeconfig/kube-proxy/kube-proxy.kubeconfig \
+		anonyman637@${EXTERNAL_IP}:~/
 done
 ```
 
 Copy the appropriate `kube-controller-manager` and `kube-scheduler` kubeconfig files to each controller instance:
 
+> file: automation/playbooks/installation/4-distribute-controller-kubeconfig.sh
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig ${instance}:~/
+no_of_controllers=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | length')
+
+for i in $(seq 0 $((no_of_controllers - 1))); do
+	EXTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | to_entries | .['"$i"'].value.ip.external')
+
+	echo "Copying encryption config to ${EXTERNAL_IP}..."
+
+	scp -o StrictHostKeyChecking=no \
+		-i ~/.ssh/gcloud \
+		$PROJECT_ROOT/config/encryption/encryption-config.yaml \
+		anonyman637@${EXTERNAL_IP}:~/
 done
 ```
 

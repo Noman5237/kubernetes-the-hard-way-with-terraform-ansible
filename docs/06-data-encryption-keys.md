@@ -16,8 +16,13 @@ ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
 
 Create the `encryption-config.yaml` encryption config file:
 
+> file: config/encryption/scripts/generate-encryption-config.sh
 ```
-cat > encryption-config.yaml <<EOF
+ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
+
+cd $PROJECT_ROOT/config/encryption
+
+cat >encryption-config.yaml <<EOF
 kind: EncryptionConfig
 apiVersion: v1
 resources:
@@ -34,9 +39,19 @@ EOF
 
 Copy the `encryption-config.yaml` encryption config file to each controller instance:
 
+> file: automation/playbooks/installation/5-distribute-controller-kubeconfig.sh
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp encryption-config.yaml ${instance}:~/
+no_of_controllers=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | length')
+
+for i in $(seq 0 $((no_of_controllers - 1))); do
+	EXTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | to_entries | .['"$i"'].value.ip.external')
+
+	echo "Copying encryption config to ${EXTERNAL_IP}..."
+
+	scp -o StrictHostKeyChecking=no \
+		-i ~/.ssh/gcloud \
+		$PROJECT_ROOT/config/encryption/encryption-config.yaml \
+		anonyman637@${EXTERNAL_IP}:~/
 done
 ```
 
