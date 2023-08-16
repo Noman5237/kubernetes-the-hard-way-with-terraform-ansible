@@ -467,12 +467,12 @@ variable "instance" {
       auto_delete = optional(bool, true)
       size        = optional(number, 10)
       type        = optional(string, "pd-balanced")
-      image       = optional(string, "projects/debian-cloud/global/images/debian-11-bullseye-v20230509")
+      image       = optional(string, "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64")
       }), {
       auto_delete = true
       size        = 10
       type        = "pd-balanced"
-      image       = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+      image       = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
     })
     scopes = optional(list(string), [
       "compute-rw",
@@ -623,7 +623,7 @@ Terraform will perform the following actions:
           + source                     = (known after apply)
 
           + initialize_params {
-              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + image  = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
               + labels = (known after apply)
               + size   = 10
               + type   = "pd-balanced"
@@ -698,7 +698,7 @@ Terraform will perform the following actions:
           + source                     = (known after apply)
 
           + initialize_params {
-              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + image  = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
               + labels = (known after apply)
               + size   = 10
               + type   = "pd-balanced"
@@ -773,7 +773,7 @@ Terraform will perform the following actions:
           + source                     = (known after apply)
 
           + initialize_params {
-              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + image  = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
               + labels = (known after apply)
               + size   = 10
               + type   = "pd-balanced"
@@ -928,7 +928,7 @@ Terraform will perform the following actions:
           + source                     = (known after apply)
 
           + initialize_params {
-              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + image  = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
               + labels = (known after apply)
               + size   = 10
               + type   = "pd-balanced"
@@ -1006,7 +1006,7 @@ Terraform will perform the following actions:
           + source                     = (known after apply)
 
           + initialize_params {
-              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + image  = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
               + labels = (known after apply)
               + size   = 10
               + type   = "pd-balanced"
@@ -1084,7 +1084,7 @@ Terraform will perform the following actions:
           + source                     = (known after apply)
 
           + initialize_params {
-              + image  = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+              + image  = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
               + labels = (known after apply)
               + size   = 10
               + type   = "pd-balanced"
@@ -1264,18 +1264,13 @@ Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
 
 ### SSH into the Controller Nodes
 ```bash
-$ ssh -i ~/.ssh/gcloud anonyman637@<controller-0-external-ip>
+$ ssh -i ~/.ssh/gcloud core@<controller-0-external-ip>
 
-Linux controller-1 5.10.0-22-cloud-amd64 #1 SMP Debian 5.10.178-3 (2023-04-22) x86_64
+Fedora CoreOS 38.20230722.3.0
+Tracker: https://github.com/coreos/fedora-coreos-tracker
+Discuss: https://discussion.fedoraproject.org/tag/coreos
 
-The programs included with the Debian GNU/Linux system are free software;
-the exact distribution terms for each program are described in the
-individual files in /usr/share/doc/*/copyright.
-
-Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
-permitted by applicable law.
-Last login: ...
-anonyman637@controller-1:~$ exit
+core@controller-1:~$ exit
 logout
 Connection to <controller-0-external-ip> closed.
 ```

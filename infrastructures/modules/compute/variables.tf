@@ -7,12 +7,12 @@ variable "instance" {
       auto_delete = optional(bool, true)
       size        = optional(number, 10)
       type        = optional(string, "pd-balanced")
-      image       = optional(string, "projects/debian-cloud/global/images/debian-11-bullseye-v20230509")
+      image       = optional(string, "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64")
       }), {
       auto_delete = true
       size        = 10
       type        = "pd-balanced"
-      image       = "projects/debian-cloud/global/images/debian-11-bullseye-v20230509"
+      image       = "projects/fedora-coreos-cloud/global/images/fedora-coreos-38-20230722-3-0-gcp-x86-64"
     })
     scopes = optional(list(string), [
       "compute-rw",
