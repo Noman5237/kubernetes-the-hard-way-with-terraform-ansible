@@ -45,4 +45,21 @@ cd $PROJECT_ROOT
 ################################################################
 ./automation/playbooks/installation/1-distribute-worker-certificates.sh
 ./automation/playbooks/installation/2-distribute-controller-certificates.sh
+
+################################################################
+#                     KUBERNETES CONFIG                        #
+################################################################
+
+./config/kubeconfig/scripts/generate-worker-kubeconfigs.sh
+./config/kubeconfig/scripts/generate-kube-proxy-kubeconfig.sh
+./config/kubeconfig/scripts/generate-controller-manager-kubeconfig.sh
+./config/kubeconfig/scripts/generate-scheduler-kubeconfig.sh
+./config/kubeconfig/scripts/generate-admin-kubeconfig.sh
+
+################################################################
+#                  DISTRIBUTING KUBECONFIGS                    #
+################################################################
+
+./automation/playbooks/installation/3-distribute-worker-kubeconfig.sh
+./automation/playbooks/installation/4-distribute-controller-kubeconfig.sh
 ```

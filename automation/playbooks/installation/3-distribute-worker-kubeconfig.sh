@@ -1,6 +1,6 @@
 no_of_workers=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | length')
 
-echo "Copying certificates to workers..."
+echo "Copying kubeconfig to workers..."
 for i in $(seq 0 $((no_of_workers - 1))); do
 	instance_name=$(cat $PROJECT_ROOT/automation/group_vars/worker_plane.yml | yq '.worker_plane | to_entries | .['"$i"'].key')
 	# replace _ with - in instance_name
@@ -14,5 +14,5 @@ for i in $(seq 0 $((no_of_workers - 1))); do
 		-i ~/.ssh/gcloud \
 		$PROJECT_ROOT/config/kubeconfig/workers/${instance_name}.kubeconfig \
 		$PROJECT_ROOT/config/kubeconfig/kube-proxy/kube-proxy.kubeconfig \
-		anonyman637@${EXTERNAL_IP}:~/
+		core@${EXTERNAL_IP}:~/
 done
