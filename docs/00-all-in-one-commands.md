@@ -62,4 +62,19 @@ cd $PROJECT_ROOT
 
 ./automation/playbooks/installation/3-distribute-worker-kubeconfig.sh
 ./automation/playbooks/installation/4-distribute-controller-kubeconfig.sh
+
+################################################################
+#                  DATA ENCRYPTION KEYS                        #
+################################################################
+
+./config/encryption/scripts/generate-encryption-config.sh
+
+################################################################
+#                  DISTRIBUTING ENCRYPTION CONFIG              #
+################################################################
+
+./automation/playbooks/installation/5-distribute-controller-encryption.sh
+
+
+
 ```

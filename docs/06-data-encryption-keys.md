@@ -51,7 +51,7 @@ for i in $(seq 0 $((no_of_controllers - 1))); do
 	scp -o StrictHostKeyChecking=no \
 		-i ~/.ssh/gcloud \
 		$PROJECT_ROOT/config/encryption/encryption-config.yaml \
-		anonyman637@${EXTERNAL_IP}:~/
+		core@${EXTERNAL_IP}:~/
 done
 ```
 
