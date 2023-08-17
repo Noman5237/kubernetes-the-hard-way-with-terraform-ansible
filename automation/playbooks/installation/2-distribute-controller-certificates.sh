@@ -4,8 +4,7 @@ echo "Copying certificates to controllers..."
 for i in $(seq 0 $((no_of_controllers - 1))); do
 	EXTERNAL_IP=$(cat $PROJECT_ROOT/automation/group_vars/control_plane.yml | yq '.control_plane | to_entries | .['"$i"'].value.ip.external')
 
-	echo "Copying certificates to ${instance_name}..."
-	echo "external ip: ${EXTERNAL_IP}"
+	echo "Copying certificates to ${EXTERNAL_IP}..."
 
 	scp -o StrictHostKeyChecking=no \
 		-i ~/.ssh/gcloud \
@@ -15,5 +14,5 @@ for i in $(seq 0 $((no_of_controllers - 1))); do
 		$PROJECT_ROOT/certificates/api-server/kubernetes-key.pem \
 		$PROJECT_ROOT/certificates/service-account/service-account.pem \
 		$PROJECT_ROOT/certificates/service-account/service-account-key.pem \
-		anonyman637@${EXTERNAL_IP}:~/
+		core@${EXTERNAL_IP}:~/
 done

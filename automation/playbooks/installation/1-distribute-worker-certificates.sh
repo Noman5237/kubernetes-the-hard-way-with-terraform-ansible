@@ -15,5 +15,5 @@ for i in $(seq 0 $((no_of_workers - 1))); do
 		$PROJECT_ROOT/certificates/ca/ca.pem \
 		$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}-key.pem \
 		$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}.pem \
-		anonyman637@${EXTERNAL_IP}:~/
+		core@${EXTERNAL_IP}:~/
 done

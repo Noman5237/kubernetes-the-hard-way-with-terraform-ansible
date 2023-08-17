@@ -123,7 +123,7 @@ terraform show -json | \
 					internal: .network_interface[0].network_ip, 
 					external: .network_interface[0].access_config[0].nat_ip
 				},
-				username: "anonyman637"
+				username: "core"
 			}
 		}' | \
 	jq -s 'reduce .[] as $item ({}; . * $item) | { "control_plane": . }' | \
@@ -140,7 +140,7 @@ terraform show -json | \
 					internal: .network_interface[0].network_ip, 
 					external: .network_interface[0].access_config[0].nat_ip
 				},
-				username: "anonyman637"
+				username: "core"
 			}
 		}' | \
 	jq -s 'reduce .[] as $item ({}; . * $item) | { "worker_plane": . }' | \
@@ -353,7 +353,7 @@ The `kubernetes-the-hard-way` static IP address will be included in the list of 
 
 Generate the Kubernetes API Server certificate and private key:
 
-> file: certificates/scripts/generate-kubernetes-api-server-certificate.sh
+> file: certificates/scripts/generate-api-server-certificate.sh
 ```
 mkdir -p $PROJECT_ROOT/certificates/api-server
 
@@ -480,7 +480,7 @@ for i in $(seq 0 $((no_of_workers - 1))); do
 		$PROJECT_ROOT/certificates/ca/ca.pem \
 		$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}-key.pem \
 		$PROJECT_ROOT/certificates/worker/${instance_name}/${instance_name}.pem \
-		anonyman637@${EXTERNAL_IP}:~/
+		core@${EXTERNAL_IP}:~/
 done
 
 ```
@@ -506,7 +506,7 @@ for i in $(seq 0 $((no_of_controllers - 1))); do
 		$PROJECT_ROOT/certificates/api-server/kubernetes-key.pem \
 		$PROJECT_ROOT/certificates/service-account/service-account.pem \
 		$PROJECT_ROOT/certificates/service-account/service-account-key.pem \
-		anonyman637@${EXTERNAL_IP}:~/
+		core@${EXTERNAL_IP}:~/
 done
 ```
 
